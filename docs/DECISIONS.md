@@ -8,3 +8,5 @@ Agents append here via the `/new-feature` skill; you append here by hand.
 - Exclude `instant`, `yr`, `days_since_2011`: time indexes let a tree predict a flat constant past 2011 and a linear model extrapolate a trend we have no grounds for.
 - Split 2011 / H1 2012 / H2 2012 by date. Test set touched once, after all feature work.
 - Report mean and persistence baselines with every score. Persistence (test R^2 0.510, MAE 840) is within 0.07 R^2 of ridge and beats it on MAE; that caveat goes in the report.
+
+- Add `cnt_roll_14` (14-day mean of lagged cnt, shift(1) before rolling on the gap-free calendar index): every input is a count from days d-14..d-1, so it is known at prediction time. Ridge valid R^2 0.6475 -> 0.6919 (+0.044, MAE 832.9 -> 763.2); hgb 0.2185 -> 0.1643 (-0.054). LAG_WARMUP raised 7 -> 14 (714 -> 700 rows). Keep: it helps the linear model materially; it hurts the trees, which is a finding, not a bug -- the roll means smooth exactly the level shift trees already can't extrapolate.
