@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from src.config import FORBIDDEN, TARGET
-from src.features import build_features, feature_columns
+from src.features import build_features, encode_weather, feature_columns
 from src.ingest import load_raw
 
 
@@ -29,6 +29,17 @@ def test_no_forbidden_features(feats):
     exactly the fault the Step 7 hook demonstrates."""
     cols = set(feature_columns(feats))
     assert not (cols & FORBIDDEN), f"forbidden columns in feature set: {cols & FORBIDDEN}"
+
+
+def test_weather_encoder_fails_loudly_on_unknown_labels(feats):
+    """Seeded-fault regression (Exercise 2, fault 3): deleting the raise in
+    encode_weather() changes nothing today (every raw label is known) and is
+    invisible to both the hook and this suite. With a raise-less encoder the
+    unknown label maps to NaN and the row is silently deleted downstream --
+    demonstrated on 2011-10-31 with a planted 'FOG' label. This keeps the
+    encoder loud, so the fault goes red the moment it is seeded."""
+    with pytest.raises(ValueError, match="unmapped weather labels"):
+        encode_weather(pd.Series(["GOOD", "MISTY", "BAD", "FOG"]))
 
 
 def test_lags_are_true_calendar_lags(feats):
