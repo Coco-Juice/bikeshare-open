@@ -9,6 +9,10 @@ rides) from calendar, weather, and lagged-demand features.
 - `make train` - fit models, write `reports/metrics.json`
 - `make test` - pytest; run this before claiming anything works
 - `make all` - the three pipeline stages in order
+- `python -m src.train --experiment loggrowth_1` - transformed-target
+  comparison (Exercise 4). Prints and **never** writes
+  `reports/metrics.json`; a bare `make train` writes the committed,
+  untransformed numbers.
 
 ## Non-negotiable rules
 - **Never** put `casual` or `registered` in a feature set:
@@ -23,6 +27,19 @@ rides) from calendar, weather, and lagged-demand features.
 - Report the mean baseline **and** the persistence baseline (yesterday's
   count) alongside every model. A negative R^2 is a finding, not a bug
   to hide.
+- History windows: the longest is 14 days (`cnt_roll_14`), which is what
+  `LAG_WARMUP` in `src/config.py` bounds. The 1/7-day lags use **literal
+  7s**, not `LAG_WARMUP` -- never parameterize one feature's window off
+  it, or raising it silently rebadges other features' windows (caught by
+  `test_rolling_mean_excludes_today` in the seeded-fault exercise).
+
+## Skills
+- `/new-feature <feature>` - starter skill; failing test first, then the
+  feature, validation delta reported honestly.
+- `/seed-fault <fault>` - authored for this assignment's fault exercise:
+  confirm green, one minimal edit, record the red run in
+  `docs/SEEDED_FAULTS.md`, restore. A fault no test or hook detects is a
+  finding to record, not to hide.
 
 ## Style
 - Standard library, pandas, scikit-learn only. No new dependencies
