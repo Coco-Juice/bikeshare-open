@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 from sklearn.metrics import r2_score
 
-from src.config import LAG_WARMUP, TARGET
+from src.config import FORBIDDEN, LAG_WARMUP, MODEL_FEATURES, TARGET
 from src.features import build_features, feature_columns, reindex_to_calendar
 from src.ingest import load_raw
 from src.train import MODELS, temporal_split
@@ -23,6 +23,26 @@ def test_calendar_is_complete_before_lagging(raw):
     """The reindexed frame must have no gaps, or the lags are wrong."""
     grid = reindex_to_calendar(raw)
     assert set(grid.dteday.diff().dropna().dt.days.unique()) == {1}
+
+
+def test_every_model_column_is_classified(feats):
+    """No numeric column may reach the modelling table unclassified.
+
+    A new raw column, or an existing leaked one renamed to something
+    innocent, flows into feature_columns() unchecked today: the
+    exclusion gate only knows FORBIDDEN by name, so `casual_clone`
+    sails through while looking nothing like `casual`. The gate this
+    test enforces is classification, not name-matching: every numeric
+    column in the feature table must be registered in src/config.py --
+    excluded (FORBIDDEN and its groups) or explicitly allowed
+    (MODEL_FEATURES). New ingestion means new classification, in the
+    one file constants live in.
+    """
+    numeric = set(feats.select_dtypes(include="number").columns)
+    unclassified = numeric - set(FORBIDDEN) - set(MODEL_FEATURES)
+    assert not unclassified, (
+        f"unclassified columns in the modelling table: {sorted(unclassified)}"
+    )
 
 
 def test_only_expected_rows_are_dropped(raw, feats):
