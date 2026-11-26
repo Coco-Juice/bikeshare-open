@@ -45,6 +45,21 @@ UNVERIFIED_COLS = {"cnt_2d_bfr"}
 # What feature_columns() and the tests actually enforce.
 FORBIDDEN = LEAKAGE_COLS | TIME_INDEX_COLS | UNVERIFIED_COLS
 
+# --- Two ways a column reaches the model, both classified here ----------
+# FORBIDDEN (above) is the deny list, matched by name. It cannot catch a
+# leaked column that arrives renamed -- `casual_clone` looks nothing like
+# `casual` -- or a brand-new column appended to the raw CSV. So the
+# allow list below is the second half of the gate: every numeric column
+# in the modelling table must be EITHER in FORBIDDEN OR registered here,
+# by name. tests/test_contract.py::test_every_model_column_is_classified
+# enforces it. Adding a feature means adding it to exactly this list.
+MODEL_FEATURES = {
+    "temp", "atemp", "hum", "windspeed",
+    "dayofweek", "is_weekend", "is_holiday", "is_workday",
+    "month_sin", "month_cos", "weather_severity",
+    "cnt_lag_1", "cnt_lag_7", "cnt_roll_7", "cnt_roll_14",
+}
+
 # Temporal split: train on 2011, validate on H1 2012, test on H2 2012.
 TRAIN_END = "2011-12-31"
 VALID_END = "2012-06-30"
