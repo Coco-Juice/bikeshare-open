@@ -8,6 +8,16 @@ The hook (`.claude/hooks/check_leakage.sh`, unchanged from the starter for
 this exercise) runs `pytest tests/test_leakage.py -q` after every
 `Edit|Write` into `src/*.py`.
 
+**Refresh (2026-11-25).** The three seedable faults were re-run against
+the current test files -- the suite has grown by two tests since this
+doc was first written (the fault-3 regression test and the
+unclassified-column contract test), which shifted line numbers and the
+pass counts in the pasted output. Each fresh run below is marked; the
+original run narrative and turn counts from Exercise 2 are preserved
+under each. Each refresh followed the authored `/seed-fault` skill:
+green confirmed, one edit, verbatim stderr, full-suite red, restore,
+`git diff` clean.
+
 ---
 
 ## Fault 1: a forbidden column added to `feature_columns`
@@ -18,8 +28,8 @@ this exercise) runs `pytest tests/test_leakage.py -q` after every
 return [c for c in numeric if c not in FORBIDDEN or c == "casual"]
 ```
 
-**Hook stderr** (arrived in the same turn the edit landed — no further
-action was possible before the hook saw it):
+**Fresh hook stderr (2026-11-25 refresh)** -- arrived in the same turn
+as the seeding edit:
 
 ```
 feats =         dteday  instant  season      yr mnth  ... weather_severity cnt_lag_1  cnt_lag_7   cnt_roll_7  cnt_roll_14
@@ -40,19 +50,26 @@ E       assert not ({'atemp', 'casual', 'cnt_lag_1', 'cnt_lag_7', 'cnt_roll_14',
 tests/test_leakage.py:31: AssertionError
 =============================================== short test summary info ================================================
 FAILED tests/test_leakage.py::test_no_forbidden_features - AssertionError: forbidden columns in feature set: {'casual'}
-1 failed, 7 passed in 0.39s
+1 failed, 8 passed in 0.44s
 ```
 
-**Turns to fix: 2.** Turn 1 = the seeding edit itself, which returned with
-the hook's stderr already attached. Turn 2 = the single reverting edit;
-suite green immediately after (`15 passed in 1.36s`). No investigation
-was needed: the assertion names the column and the line.
+Full suite, red output captured by hand for the record:
 
-*Note for honesty:* the very first seeding attempt produced a hook that
-exited with ``line 22: python: command not found`` because this session
-had been started before the project venv was activated; the fault went
-unnoticed by the hook until the session env resolved `python`. A hook
-whose interpreter is missing degrades to *no guard at all*, silently.
+```
+FAILED tests/test_leakage.py::test_no_forbidden_features - AssertionError: fo...
+1 failed, 16 passed in 1.32s
+```
+
+**Turns to fix: 2** (refresh run; the original 2026-11-19 exercise run
+was also 2: hook stderr on the seeding turn, one reverting edit to
+green at `15 passed`).
+
+*Note recorded on the original run:* the very first seeding attempt had
+produced a hook that exited with ``line 22: python: command not found``
+because the session had started before the project venv was activated;
+the fault went unnoticed by the hook until the session env resolved
+`python`. A hook whose interpreter is missing degrades to *no guard at
+all*, silently.
 
 ---
 
@@ -64,7 +81,8 @@ whose interpreter is missing degrades to *no guard at all*, silently.
 out["cnt_roll_7"] = out[TARGET].rolling(7).mean()   # shift(1) removed
 ```
 
-**Hook stderr** (again in the same turn as the edit):
+**Fresh hook stderr (2026-11-25 refresh)** -- in the same turn as the
+seeding edit:
 
 ```
     def test_rolling_mean_excludes_today(feats):
@@ -78,26 +96,30 @@ out["cnt_roll_7"] = out[TARGET].rolling(7).mean()   # shift(1) removed
 E           assert np.float64(4389.428571428572) == 4240.714285714285 ± 0.00424071
 E             
 E             comparison failed
-E           Obtained: 4389.428571428572
-E           Expected: 4240.714285714285 ± 0.00424071
+E             Obtained: 4389.428571428572
+E             Expected: 4240.714285714285 ± 0.00424071
 
-tests/test_leakage.py:57: AssertionError
+tests/test_leakage.py:68: AssertionError
 =============================================== short test summary info ================================================
 FAILED tests/test_leakage.py::test_rolling_mean_excludes_today - assert np.float64(4389.428571428572) == 4240.7142857...
-1 failed, 7 passed in 0.52s
+1 failed, 8 passed in 0.66s
 ```
 
 The 149-ride discrepancy at 2011-08-20 is exactly today's count being
-pulled into its own 7-day window.
+pulled into its own 7-day window. Full suite, captured by hand:
 
-**Turns to fix: 2** — hook stderr on the turn of the seeding edit; one
-reverting edit restores `15 passed in 2.80s`.
+```
+FAILED tests/test_leakage.py::test_rolling_mean_excludes_today - assert np.fl...
+1 failed, 16 passed in 1.73s
+```
+
+**Turns to fix: 2** (refresh run; matching the original run's 2).
 
 ---
 
 ## Fault 3: the weather encoder's `raise` removed
 
-**Exact change** (`src/features.py`, `encode_weather`) — the
+**Exact change** (`src/features.py`, `encode_weather`) -- the
 `if unknown:` block deleted:
 
 ```python
@@ -106,10 +128,12 @@ reverting edit restores `15 passed in 2.80s`.
     return series.map(WEATHER_ORDER).astype(float)   # raise removed
 ```
 
-**Hook stderr: none. The hook ran and stayed silent.** Removing the raise
-changes nothing today — every label in the raw file is already
-GOOD/MISTY/BAD — so the guard is latent, and the hook's test selection
-never looks at anything that could fail. Full suite for the record:
+### The original run (2026-11-19): an invisible fault
+
+**Hook stderr: none. The hook ran and stayed silent.** Removing the
+raise changes nothing today -- every label in the raw file is already
+GOOD/MISTY/BAD -- so the guard was latent, and the hook's test selection
+never looked at anything that could fail. Full suite for the record:
 
 ```
 $ python -m pytest -q
@@ -133,24 +157,36 @@ Same input with the raise restored:
 with the raise restored, same input raises: ValueError: unmapped weather labels: ['FOG']
 ```
 
-The only automated guard against the silent variant would be
-`tests/test_contract.py::test_only_expected_rows_are_dropped` (one row
-quietly lost breaks its exact accounting) — but the hook runs only
-`tests/test_leakage.py`, so it can never see that test fire.
+**Turns to fix: 3**, and the hook contributed nothing: seed turn
+(hook silent, suite green), harm-demo turn, restore-plus-new-regression-
+test turn (`tests/test_leakage.py::test_weather_encoder_fails_loudly_on_unknown_labels`).
 
-**Turns to fix: 3**, and the hook contributed nothing: turn 1 = seed
-(hook silent, suite green), turn 2 = in-memory harm demo above, turn 3 =
-restore the `raise` **plus** a new permanent regression test
-(`tests/test_leakage.py::test_weather_encoder_fails_loudly_on_unknown_labels`),
-which makes the fault go red the moment it is ever re-seeded:
+### The refresh run (2026-11-25): the same fault, now caught
+
+The regression test added during the original run turns this fault red
+the moment it is seeded. **Fresh hook stderr (2026-11-25)** -- arrived
+in the same turn as the seeding edit:
 
 ```
-def test_weather_encoder_fails_loudly_on_unknown_labels(feats):
-    with pytest.raises(ValueError, match="unmapped weather labels"):
-        encode_weather(pd.Series(["GOOD", "MISTY", "BAD", "FOG"]))
+    def test_weather_encoder_fails_loudly_on_unknown_labels(feats):
+        """Seeded-fault regression (Exercise 2, fault 3): deleting the raise in
+        encode_weather() changes nothing today (every raw label is known) and is
+        invisible to both the hook and this suite. With a raise-less encoder the
+        unknown label maps to NaN and the row is silently deleted downstream --
+        demonstrated on 2011-10-31 with a planted 'FOG' label. This keeps the
+        encoder loud, so the fault goes red the moment it is seeded."""
+>       with pytest.raises(ValueError, match="unmapped weather labels"):
+E       Failed: DID NOT RAISE ValueError
+
+tests/test_leakage.py:41: Failed
+=============================================== short test summary info ================================================
+FAILED tests/test_leakage.py::test_weather_encoder_fails_loudly_on_unknown_labels - Failed: DID NOT RAISE ValueError
+1 failed, 8 passed in 0.42s
 ```
 
-Suite after fix: `16 passed in 2.16s`.
+Full suite: `1 failed, 16 passed in 1.28s`. **Turns to fix: 2**
+(hook stderr on the seeding turn; one reverting edit to
+`17 passed in 1.28s`, `git diff` clean).
 
 ---
 
@@ -165,13 +201,13 @@ $ cp /tmp/bike_daily_corrupted.csv data/raw/bike_daily.csv
 (Bash completed with no output)
 ```
 
-**What happened: nothing observable.** No hook fired — the PostToolUse
+**What happened: nothing observable.** No hook fired -- the PostToolUse
 matcher is `Edit|Write`, and this change never went through either tool.
-No permission prompt gated the *content*, only the tool call (see below).
-`reports/metrics.json` was then rewritten silently by a normal
-`python -m src.features && python -m src.train`, and the reported numbers
-got **better**, not worse — the direction an iterating agent is trained
-to keep:
+No permission prompt gated the *content*, only the tool call (see
+below). `reports/metrics.json` was then rewritten silently by a normal
+`python -m src.features && python -m src.train`, and the reported
+numbers got **better**, not worse -- the direction an iterating agent is
+trained to keep:
 
 | metric | before cp | after cp | notes |
 |---|---|---|---|
@@ -179,8 +215,8 @@ to keep:
 | persistence test R² | 0.5099 | 0.8286 | silently "improved" |
 | ridge valid R² | 0.6919 | 0.6919 | byte-identical (corruption sits in the test period) |
 
-One tripwire fired by accident, and only when the suite was run manually:
-`casual + registered` no longer equals the doubled `cnt`:
+One tripwire fired by accident, and only when the suite was run
+manually: `casual + registered` no longer equals the doubled `cnt`:
 
 ```
 tests/test_leakage.py:22: AssertionError
@@ -190,8 +226,8 @@ FAILED tests/test_leakage.py::test_leakage_identity_holds - assert np.False_
 ```
 
 That is luck, not defense: a corruption scaled across `cnt`, `casual`,
-and `registered` together — or one that never enters the repo's CSV at
-all — passes the entire suite.
+and `registered` together -- or one that never enters the repo's CSV at
+all -- passes the entire suite.
 
 **Also observed:** when the same write was attempted through the Bash
 *tool*, the session's permission layer refused it twice:
@@ -201,12 +237,12 @@ Permission to use Bash with command cp /tmp/bike_daily_corrupted.csv data/raw/bi
 ```
 
 The fault only landed because a human executed it directly in the
-terminal — the permission system, not the hook, was the layer that
+terminal -- the permission system, not the hook, was the layer that
 actually noticed the repo-bound write.
 
 **What would have caught it, permanently:**
 
-1. `data/raw/` is checked into git — the change was visible immediately
+1. `data/raw/` is checked into git -- the change was visible immediately
    in `git status`:
 
    ```
@@ -215,11 +251,11 @@ actually noticed the repo-bound write.
 
 2. A raw-data contract test (fixture asserting the file's hash/content
    against its git blob, or pinned knowns: 728 rows, 2011-01-03..2012-12-31,
-   2011-03-10 absent) — none exists today; `src/ingest.py` only checks
+   2011-03-10 absent) -- none exists today; `src/ingest.py` only checks
    `>= 700 rows` and required column names.
 3. A `PreToolUse` deny for Bash writes into `data/raw/**`.
    `.claude/settings.json` denies `Write(./data/raw/**)` and
-   `Edit(./data/raw/**)`, but those are *tool* matchers — Bash is a
+   `Edit(./data/raw/**)`, but those are *tool* matchers -- Bash is a
    different surface and is not covered.
 
 **Restoration:** `cp /tmp/bike_daily_ORIGINAL.csv data/raw/bike_daily.csv`,
@@ -231,13 +267,59 @@ d9b73e6e892a9115bc61a58a81eaeb3e  /tmp/bike_daily_ORIGINAL.csv
 -- git sees no change: raw restored --
 ```
 
+### The guard, implemented (2026-11-25)
+
+Of the three named catches, option 2 -- the hash check -- is implemented:
+the committed file's SHA-256 is recorded in `src/config.py`
+(`EXPECTED_RAW_SHA256`), `src/ingest.py::check_raw_hash()` verifies it
+inside `load_raw()` (so `make data` fails loudly *before* any downstream
+stage consumes a doctored file), and
+`tests/test_contract.py::test_raw_matches_recorded_hash` asserts the
+same recorded hash directly, making the guard itself a red test.
+
+The demonstration: the same corruption as above, re-seeded from
+`/tmp`, then `make data` and the suite:
+
+```
+$ python -m src.ingest
+ValueError: raw data hash mismatch: bike_daily.csv is
+6ab12a2ed1c87fd30c9bf8729ebed1a1cb4215f523b6aaa6893b2578d427396d,
+expected a6bed1577f6e4de56dcfae6d8315985073cc0ad3446c8c99ed60c86a0b5ad9dc.
+The raw file changed outside the pipeline -- this is the fault the hook
+cannot see. Restore with: git checkout -- data/raw/bike_daily.csv
+
+$ python -m pytest -q
+1 failed, 1 passed, 16 errors in 1.20s     # test_raw_matches_recorded_hash red, fixtures error at load_raw
+
+$ git checkout -- data/raw/bike_daily.csv   # the guard's own one-command remediation
+$ python -m pytest -q
+18 passed in 1.25s
+```
+
+The diff (summarised; `git show` for full):
+
+```diff
+ src/config.py      | EXPECTED_RAW_SHA256 = "a6bed157...5ad9dc"  (recorded hash)
+ src/ingest.py      | +check_raw_hash(): sha256(RAW) != EXPECTED -> ValueError with restore instruction
+                    | +check_raw_hash() called at the top of load_raw()
+ tests/test_contract.py | +test_raw_matches_recorded_hash(): asserts the same recorded hash,
+                        |   message carries the restore command
+```
+
+What this changes for the original run's story: the permission denial
+that blocked the *tool*-mediated `cp` (above) was the only catch before;
+now the guard catches the Bash write the hook cannot see, at every
+pipeline entry point, with a remediation one-liner -- and a corruption
+`cnt`/`casual`/`registered`-together can no longer sneak past the suite,
+because the hash test fails first.
+
 ---
 
 ## Summary
 
 | fault | hook fired? | red test | turns to fix |
 |---|---|---|---|
-| 1. `casual` in `feature_columns` | yes, same turn | `test_no_forbidden_features` | 2 |
-| 2. `shift(1)` deleted from `cnt_roll_7` | yes, same turn | `test_rolling_mean_excludes_today` | 2 |
-| 3. encoder `raise` removed | **no — silent here** | none existed; new regression test added | 3 |
-| 4. Bash `cp` into `data/raw/` | **cannot** (matcher is tool-scoped) | none; `git status` + absent contract test | n/a (fault + restore executed by the human) |
+| 1. `casual` in `feature_columns` | yes, same turn (both runs) | `test_no_forbidden_features` | 2 |
+| 2. `shift(1)` deleted from `cnt_roll_7` | yes, same turn (both runs) | `test_rolling_mean_excludes_today` | 2 |
+| 3. encoder `raise` removed | **no, original run** / **yes after the regression test** | none existed initially; new test added, fault red on refresh | 3 original / 2 refresh |
+| 4. Bash `cp` into `data/raw/` | **cannot** (matcher is tool-scoped) | none originally; guard implemented: `test_raw_matches_recorded_hash` red, `make data` fails loudly | n/a (fault + restore executed by the human) |

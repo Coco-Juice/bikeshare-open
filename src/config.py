@@ -64,6 +64,17 @@ MODEL_FEATURES = {
 TRAIN_END = "2011-12-31"
 VALID_END = "2012-06-30"
 
+# The raw file is checked into git, so a doctored or corrupted copy is
+# always detectable. This matters because data/raw/ is the one fault
+# surface the PostToolUse hook cannot see: writes to it happen through
+# Bash (see docs/SEEDED_FAULTS.md, fault 4), which triggers neither the
+# hook (matcher: Edit|Write on src/*.py) nor the settings deny rules
+# (tool matchers). src/ingest.py verifies this hash in load_raw();
+# tests/test_contract.py asserts it directly.
+EXPECTED_RAW_SHA256 = (
+    "a6bed1577f6e4de56dcfae6d8315985073cc0ad3446c8c99ed60c86a0b5ad9dc"
+)
+
 # Longest lag window in src/features.py. The first LAG_WARMUP calendar days
 # have no complete history and are dropped; tests/test_contract.py uses this
 # to bound how many rows may legitimately disappear.
