@@ -1,9 +1,18 @@
 """Guard rails on the ingest contract and the trained model's behaviour."""
+import hashlib
+
 import pandas as pd
 import pytest
 from sklearn.metrics import r2_score
 
-from src.config import FORBIDDEN, LAG_WARMUP, MODEL_FEATURES, TARGET
+from src.config import (
+    EXPECTED_RAW_SHA256,
+    FORBIDDEN,
+    LAG_WARMUP,
+    MODEL_FEATURES,
+    RAW,
+    TARGET,
+)
 from src.features import build_features, feature_columns, reindex_to_calendar
 from src.ingest import load_raw
 from src.train import MODELS, temporal_split
@@ -17,6 +26,20 @@ def raw():
 @pytest.fixture(scope="module")
 def feats(raw):
     return build_features(raw)
+
+
+def test_raw_matches_recorded_hash():
+    """The named catch for exercise 2 fault 4 (Bash `cp` into data/raw/,
+    which the PostToolUse hook cannot see): the raw file must be
+    byte-identical to the git-committed original recorded in
+    src/config.py. Asserting the hash directly -- rather than only
+    exercising it inside load_raw() -- makes the guard itself the red
+    test, whatever corrupts the file."""
+    actual = hashlib.sha256(RAW.read_bytes()).hexdigest()
+    assert actual == EXPECTED_RAW_SHA256, (
+        f"raw file changed: sha256 {actual} != recorded "
+        f"{EXPECTED_RAW_SHA256}. Restore: git checkout -- data/raw/bike_daily.csv"
+    )
 
 
 def test_calendar_is_complete_before_lagging(raw):
