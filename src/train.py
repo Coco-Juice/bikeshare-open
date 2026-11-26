@@ -86,8 +86,85 @@ def fit_and_score() -> dict:
     return results
 
 
+# --- Exercise 4: argue with the result ----------------------------------
+# The headline finding is that hgb loses to ridge because trees cannot
+# extrapolate the ~65% 2011->2012 growth. These experiments fit a
+# TRANSFORMED target and reconstruct predictions back to the cnt scale,
+# so they are comparable with the baselines. Experiment code only: it
+# prints a table and never writes reports/metrics.json. The committed
+# pipeline above remains untransformed.
+VARIANTS = {
+    # fit on log1p(cnt): relative errors, but the tree's ceiling is
+    # exp(log1p(max training cnt)) -- the cap itself is not removed.
+    "log1p": {
+        "fit_target": "np.log1p(cnt)",
+        "reconstruct": "expm1(pred_hat)",
+    },
+    # fit on log growth vs an observed anchor day, so the tree predicts
+    # the CHANGE and the known lag carries the trend level:
+    #   y      = log1p(cnt) - log1p(anchor)
+    #   cnt_hat = expm1(log1p(anchor_observed) + y_hat)
+    "loggrowth_1": {"anchor": "cnt_lag_1"},
+    "loggrowth_7": {"anchor": "cnt_lag_7"},
+}
+
+
+def target_experiment(variant: str, splits: list[str]) -> dict:
+    import numpy as np
+    from sklearn.base import clone
+
+    df = pd.read_parquet(PROCESSED)
+    cols = feature_columns(df)
+    train, _, _ = temporal_split(df)
+    _, valid, test = temporal_split(df)
+    by_split = {"valid": valid, "test": test}
+    out = {}
+    for mname in ("hgb", "ridge"):
+        model = clone(MODELS[mname])
+        if variant == "log1p":
+            y = np.log1p(train[TARGET])
+            predict_cnt = lambda part, pred: np.maximum(np.expm1(pred), 0)
+        else:
+            anchor = VARIANTS[variant]["anchor"]
+            y = np.log1p(train[TARGET]) - np.log1p(train[anchor])
+            predict_cnt = lambda part, pred: np.maximum(
+                np.expm1(np.log1p(part[anchor]) + pred), 0
+            )
+        model.fit(train[cols], y)
+        for tag in splits:
+            part = by_split[tag]
+            pred = predict_cnt(part, model.predict(part[cols]))
+            out.setdefault(mname, {})[tag] = {
+                "r2": round(float(r2_score(part[TARGET], pred)), 4),
+                "mae": round(float(mean_absolute_error(part[TARGET], pred)), 1),
+            }
+    return out
+
+
 if __name__ == "__main__":
-    res = fit_and_score()
-    METRICS.parent.mkdir(parents=True, exist_ok=True)
-    METRICS.write_text(json.dumps(res, indent=2))
-    print(json.dumps({k: v for k, v in res.items() if k != "features"}, indent=2))
+    import argparse
+
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument(
+        "--experiment",
+        choices=sorted(VARIANTS),
+        help="Exercise 4: fit on a transformed target and print the "
+        "reconstructed comparison. Never writes reports/metrics.json.",
+    )
+    ap.add_argument(
+        "--splits",
+        default="valid",
+        help="comma-separated splits to score (default: valid only; "
+        "test is touched once, at the end).",
+    )
+    args = ap.parse_args()
+    if args.experiment is None:
+        res = fit_and_score()
+        METRICS.parent.mkdir(parents=True, exist_ok=True)
+        METRICS.write_text(json.dumps(res, indent=2))
+        print(json.dumps({k: v for k, v in res.items() if k != "features"}, indent=2))
+    else:
+        splits = [s.strip() for s in args.splits.split(",")]
+        res = target_experiment(args.experiment, splits)
+        print(f"experiment={args.experiment} splits={splits} (metrics.json untouched)")
+        print(json.dumps(res, indent=2))
